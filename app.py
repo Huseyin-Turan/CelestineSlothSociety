@@ -2,16 +2,36 @@ import pandas as pd
 from dash import Dash, dcc, html, Input, Output
 import plotly.graph_objects as go
 
+# Örnek veri
 url = "https://docs.google.com/spreadsheets/d/1Ou6kgRx5VuhopKeBwztKs1Aps-KIxNz4YCEcOUbmDrc/export?format=csv"
 df = pd.read_csv(url)
 df['date'] = pd.to_datetime(df['date'])
+df['priceUsd'] = (
+    df['priceUsd']
+    .astype(str)
+    .str.replace('.', '', regex=False)       # Noktaları temizle (binlik ayırıcı)
+    .str.replace(',', '.', regex=False)      # Virgülü ondalık yap
+    .astype(float)
+)
+
+def get_data():
+    url = "https://docs.google.com/spreadsheets/d/1Ou6kgRx5VuhopKeBwztKs1Aps-KIxNz4YCEcOUbmDrc/export?format=csv"
+    df = pd.read_csv(url)
+    df['date'] = pd.to_datetime(df['date'])
+    df['priceUsd'] = (
+        df['priceUsd']
+        .astype(str)
+        .str.replace('.', '', regex=False)       # Noktaları temizle (binlik ayırıcı)
+        .str.replace(',', '.', regex=False)      # Virgülü ondalık yap
+        .astype(float))
+    return df
+
 
 custom_colors = ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"]
 sale_types = df['saleType'].unique()
 color_map = {sale_type: custom_colors[i % len(custom_colors)] for i, sale_type in enumerate(sale_types)}
 
 app = Dash(__name__)
-server = app.server  # ⬅️ Render için şart
 
 app.layout = html.Div([
     html.Div([
@@ -19,14 +39,21 @@ app.layout = html.Div([
         html.Div(id="image-box", style={
             "width": "30%", "padding": "20px", "borderLeft": "1px solid lightgray"
         })
-    ], style={"display": "flex"})
+    ], style={"display": "flex"}) ,
+    #Her 1 saatte bir otomatik tetikleme (3600000 ms)
+    dcc.Interval(
+        id='interval-component',
+        interval=3600 * 1000,
+        n_intervals=0
+    )
 ])
 
 @app.callback(
     Output("scatter-plot", "figure"),
-    Input("scatter-plot", "id")
+    Input("interval-component", "n_intervals")
 )
-def create_figure(_):
+def create_figure(n_intervals):
+    df = get_data()
     fig = go.Figure()
     for sale_type in sale_types:
         filtered = df[df['saleType'] == sale_type]
@@ -41,7 +68,7 @@ def create_figure(_):
         ))
 
     fig.update_layout(
-        title="NFT Satışları",
+        title="Daily Sales and Activity of Sloths",
         hovermode="closest",
         xaxis_title="Date",
         yaxis_title="Price (USD)",
@@ -57,7 +84,7 @@ def create_figure(_):
 def show_image(hoverData):
     if hoverData:
         point = hoverData['points'][0]
-        token_id, price, sale_type, url, date = point['customdata']
+        token_id, price, sale_type, url,date = point['customdata']
         return html.Div([
             html.Img(src=url, style={"width": "100%", "border": "1px solid #ddd", "borderRadius": "8px"}),
             html.H4(f"Token ID: {token_id}"),
