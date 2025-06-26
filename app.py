@@ -1,13 +1,13 @@
-## Son hali 
-
 import pandas as pd
 from dash import Dash, dcc, html, Input, Output
 import plotly.graph_objects as go
+from dash import dash_table
 from datetime import datetime, timedelta, date
 
-# Global veri önbelleği
+# Global veri cache
 DATA_CACHE = pd.DataFrame()
 
+# ✨ Veri cekme fonksiyonu
 def get_data():
     url = "https://docs.google.com/spreadsheets/d/1Ou6kgRx5VuhopKeBwztKs1Aps-KIxNz4YCEcOUbmDrc/export?format=csv"
     df = pd.read_csv(url)
@@ -20,64 +20,61 @@ def get_data():
         .astype(float))
     return df
 
-# Başlangıçta veriyi çek
+# Ilk veri yuklemesi
 DATA_CACHE = get_data()
-
-
 custom_colors = ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"]
 
+# Dash app baslangici
 app = Dash(__name__)
 
+# Layout
 app.layout = html.Div([
-    html.H2("NFT Satış Dashboard", style={"textAlign": "center", "marginBottom": "10px"}),
+    html.H2("NFT Satış Dashboard", style={"textAlign": "center", "marginBottom": "10px", "marginTop": "10px"}),
 
-    html.Div([
-        dcc.DatePickerRange(
-            id='date-picker',
-            min_date_allowed=date(2023, 1, 1),
-            max_date_allowed=date.today(),
-            start_date=date.today() - pd.Timedelta(days=7),
-            end_date=date.today()
-        )
-    ], style={"textAlign": "center", "marginBottom": "30px"}),
+    dcc.DatePickerRange(
+        id='date-picker',
+        min_date_allowed=date(2023, 1, 1),
+        max_date_allowed=date.today(),
+        start_date=date.today() - timedelta(days=7),
+        end_date=date.today(),
+        style={"display": "block", "margin": "0 auto 10px auto","textAlign": "center"}
+    ),
 
     html.Div([
         dcc.Graph(id='kpi-total-txn', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"}),
         dcc.Graph(id='kpi-offer-txn', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"}),
         dcc.Graph(id='kpi-total-volume', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"})
-    ], style={"textAlign": "center", "marginBottom": "30px"}),
+    ], style={"textAlign": "center", "marginBottom": "10px"}),
 
     html.Div([
         dcc.Graph(id="scatter-plot", style={"width": "70%", "height": "600px"}),
-        html.Div(id="image-box", style={
-            "width": "30%", "padding": "20px", "borderLeft": "1px solid lightgray"
-        })
-    ], style={"display": "flex"}),
+        html.Div(id="image-box", style={"width": "30%", "padding": "20px", "borderLeft": "1px solid lightgray"})
+    ], style={"display": "flex", "marginBottom": "10px"}),
 
     html.Div([
-        html.H4("Son 7 Günlük Satışlar", style={"marginTop": "40px"}),
-        html.Table([
-            html.Thead([
-                html.Tr([
-                    html.Th("NFT"),
-                    html.Th("Date"),
-                    html.Th("Token"),
-                    html.Th("Type"),
-                    html.Th("Price (USD)")
-                ])
-            ]),
-            html.Tbody(id="sales-table-html")
-        ], style={"width": "100%", "borderCollapse": "collapse", "marginTop": "20px"})
+        html.H4("Date Range Data", style={"marginTop": "10px"}),
+        dash_table.DataTable(
+            id='sales-table-html',
+            columns=[
+                {"name": "NFT", "id": "url", "presentation": "markdown"},
+                {"name": "Date", "id": "date"},
+                {"name": "Token", "id": "tokenId"},
+                {"name": "Type", "id": "saleType"},
+                {"name": "Price (USD)", "id": "priceUsd"},
+            ],
+            page_size=10,
+            style_cell={"textAlign": "left"},
+            style_data_conditional=[],
+            style_data={"whiteSpace": "normal", "height": "auto"},
+            markdown_options={"html": True},
+        )
     ]),
 
-    dcc.Interval(
-        id='interval-component',
-        interval=3600 * 1000,  # 1 saat
-        n_intervals=0
-    )
-], style={"fontFamily": "Arial, sans-serif", "padding": "20px"})
+    dcc.Interval(id='interval-component', interval=3600 * 1000, n_intervals=0)
+], style={"fontFamily": "Arial, sans-serif", "padding": "10px"})
 
 
+# KPI Guncelleme
 @app.callback(
     Output('kpi-total-txn', 'figure'),
     Output('kpi-offer-txn', 'figure'),
@@ -85,79 +82,38 @@ app.layout = html.Div([
     Input('date-picker', 'start_date'),
     Input('date-picker', 'end_date')
 )
-def update_dashboard(start_date, end_date):
-    df = DATA_CACHE.copy()
-    if start_date and end_date:
-        start_date_obj = pd.to_datetime(start_date).date()
-        end_date_obj = pd.to_datetime(end_date).date()
-        df['date_only'] = df['date'].dt.date
-        df = df[(df['date_only'] >= start_date_obj) & (df['date_only'] <= end_date_obj)]
-
+def update_kpis(start_date, end_date):
+    df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
     total_txn = len(df)
     offer_txn = df[df['saleType'].isin(['COLLECTION_OFFER', 'OFFER'])].shape[0]
     total_volume = df['priceUsd'].sum()
 
-    def create_gauge(title, value, max_value, color):
+    def gauge(title, value, max_value):
         return go.Figure(go.Indicator(
             mode="gauge+number",
             value=value,
-            gauge={'axis': {'range': [0, max_value]}, 'bar': {'color': color}},
+            gauge={'axis': {'range': [0, max_value]}, 'bar': {'color': "#2196f3"}},
             title={'text': title}
         ))
 
     return (
-        create_gauge("Total TXN", total_txn, max(100, total_txn * 1.2), "#2196f3"),
-        create_gauge("Offer TXN", offer_txn, max(50, offer_txn * 1.2), "#2196f3"),
-        create_gauge("Total Volume", total_volume, max(1000, total_volume * 1.2), "#2196f3")
+        gauge("Total TXN", total_txn, max(100, total_txn * 1.2)),
+        gauge("Offer TXN", offer_txn, max(50, offer_txn * 1.2)),
+        gauge("Total Volume", total_volume, max(1000, total_volume * 1.2))
     )
 
 
-@app.callback(
-    Output("sales-table-html", "children"),
-    Input("interval-component", "n_intervals"),
-    Input('date-picker', 'start_date'),
-    Input('date-picker', 'end_date')
-)
-def update_table(n_intervals,start_date,end_date):
-    global DATA_CACHE
-    DATA_CACHE = get_data()  # yenile
-    df = DATA_CACHE.copy()
-
-    if start_date and end_date:
-        start_date_obj = pd.to_datetime(start_date).date()
-        end_date_obj = pd.to_datetime(end_date).date()
-        df['date_only'] = df['date'].dt.date
-        df_recent = df[(df['date_only'] >= start_date_obj) & (df['date_only'] <= end_date_obj)]
-    
-
-    rows = []
-    for _, row in df_recent.iterrows():
-        rows.append(html.Tr([
-            html.Td(html.Img(src=row['url'], style={"height": "40px", "width": "40px"})),
-            html.Td(str(row['date'].date())),
-            html.Td(row['tokenId']),
-            html.Td(row['saleType']),
-            html.Td(f"${row['priceUsd']:,.2f}")
-        ]))
-    return rows
-
-
+# Scatter plot
 @app.callback(
     Output("scatter-plot", "figure"),
     Input("interval-component", "n_intervals"),
     Input('date-picker', 'start_date'),
     Input('date-picker', 'end_date')
 )
-def create_figure(n_intervals,start_date,end_date):
-    df = DATA_CACHE.copy()
-    if start_date and end_date:
-        start_date_obj = pd.to_datetime(start_date).date()
-        end_date_obj = pd.to_datetime(end_date).date()
-        df['date_only'] = df['date'].dt.date
-        df = df[(df['date_only'] >= start_date_obj) & (df['date_only'] <= end_date_obj)]
+def create_scatter(_, start_date, end_date):
+    df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
     sale_types = df['saleType'].unique()
-    color_map = {sale_type: custom_colors[i % len(custom_colors)] for i, sale_type in enumerate(sale_types)}
-
+    color_map = {s: custom_colors[i % len(custom_colors)] for i, s in enumerate(sale_types)}
     fig = go.Figure()
     for sale_type in sale_types:
         filtered = df[df['saleType'] == sale_type]
@@ -170,7 +126,6 @@ def create_figure(n_intervals,start_date,end_date):
             customdata=filtered[['tokenId', 'priceUsd', 'saleType', 'url', 'date']],
             hovertemplate="<b>Token:</b> %{customdata[0]}<br>Price: $%{customdata[1]}<br>Type: %{customdata[2]}<extra></extra>"
         ))
-
     fig.update_layout(
         title="Daily Sales and Activity of Sloths",
         hovermode="closest",
@@ -182,6 +137,24 @@ def create_figure(n_intervals,start_date,end_date):
     return fig
 
 
+# Tablo
+@app.callback(
+    Output("sales-table-html", "data"),
+    Input("interval-component", "n_intervals"),
+    Input('date-picker', 'start_date'),
+    Input('date-picker', 'end_date')
+)
+def update_table(_, start_date, end_date):
+    global DATA_CACHE
+    DATA_CACHE = get_data()
+    df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
+    df['url'] = df['url'].apply(lambda x: f"<div style='text-align:center'><img src='{x}' style='height:45px;width:45px;'></div>")
+    df['date'] = df['date'].dt.date
+    df['priceUsd'] = df['priceUsd'].apply(lambda x: f"${x:,.2f}")
+    return df[['url', 'date', 'tokenId', 'saleType', 'priceUsd']].to_dict('records')
+
+
+# Hover Resmi
 @app.callback(
     Output("image-box", "children"),
     Input("scatter-plot", "hoverData")
@@ -198,6 +171,16 @@ def show_image(hoverData):
             html.P(f"Price: ${price}")
         ])
     return html.Div("...", style={"color": "gray", "fontSize": 16})
+
+
+# filter 
+def filter_data_by_date(df, start_date, end_date):
+    if start_date and end_date:
+        start = pd.to_datetime(start_date).date()
+        end = pd.to_datetime(end_date).date()
+        df['date_only'] = df['date'].dt.date
+        df = df[(df['date_only'] >= start) & (df['date_only'] <= end)]
+    return df
 
 if __name__ == '__main__':
     app.run(debug=False, host="0.0.0.0", port=8080)
