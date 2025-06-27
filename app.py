@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, date
 # Global veri cache
 DATA_CACHE = pd.DataFrame()
 
-# ✨ Veri cekme fonksiyonu
+# Veri cekme fonksiyonu
 def get_data():
     url = "https://docs.google.com/spreadsheets/d/1Ou6kgRx5VuhopKeBwztKs1Aps-KIxNz4YCEcOUbmDrc/export?format=csv"
     df = pd.read_csv(url)
@@ -29,7 +29,7 @@ app = Dash(__name__)
 
 # Layout
 app.layout = html.Div([
-    html.H2("NFT Satış Dashboard", style={"textAlign": "center", "marginBottom": "10px", "marginTop": "10px"}),
+    html.H2("Sloth NFT Market Performance Overview", style={"textAlign": "center", "marginBottom": "10px", "marginTop": "10px"}),
 
     dcc.DatePickerRange(
         id='date-picker',
@@ -97,8 +97,8 @@ def update_kpis(start_date, end_date):
         ))
 
     return (
-        gauge("Total TXN", total_txn, max(100, total_txn * 1.2)),
-        gauge("Offer TXN", offer_txn, max(50, offer_txn * 1.2)),
+        gauge("Total Transactions", total_txn, max(100, total_txn * 1.2)),
+        gauge("Offers Transactions", offer_txn, max(50, offer_txn * 1.2)),
         gauge("Total Volume", total_volume, max(1000, total_volume * 1.2))
     )
 
@@ -148,6 +148,7 @@ def update_table(_, start_date, end_date):
     global DATA_CACHE
     DATA_CACHE = get_data()
     df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
+    df = df.sort_values(by='date', ascending=False)
     df['url'] = df['url'].apply(lambda x: f"<div style='text-align:center'><img src='{x}' style='height:45px;width:45px;'></div>")
     df['date'] = df['date'].dt.date
     df['priceUsd'] = df['priceUsd'].apply(lambda x: f"${x:,.2f}")
