@@ -45,6 +45,12 @@ app.layout = html.Div([
         dcc.Graph(id='kpi-offer-txn', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"}),
         dcc.Graph(id='kpi-total-volume', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"})
     ], style={"textAlign": "center", "marginBottom": "10px"}),
+    
+    html.Div([
+        dcc.Graph(id="Pareto-plot", style={"width": "70%", "height": "600px"}),
+        html.Div(id="image-box", style={"width": "30%", "padding": "20px", "borderLeft": "1px solid lightgray"})
+    ], style={"display": "flex", "marginBottom": "10px"}),
+    
 
     html.Div([
         dcc.Graph(id="scatter-plot", style={"width": "70%", "height": "600px"}),
@@ -103,7 +109,7 @@ def update_kpis(start_date, end_date):
     )
 
 
-# Scatter plot
+# Scatter  plot
 @app.callback(
     Output("scatter-plot", "figure"),
     Input("interval-component", "n_intervals"),
@@ -135,6 +141,70 @@ def create_scatter(_, start_date, end_date):
         paper_bgcolor="white"
     )
     return fig
+
+# Pareto plot
+@app.callback(
+    Output("Pareto-plot", "figure"),
+    Input("interval-component", "n_intervals"),
+    Input('date-picker', 'start_date'),
+    Input('date-picker', 'end_date')
+    
+    
+def create_pareto(_, start_date, end_date):
+    # Günlük satış adedi türlerine göre
+    daily_count_by_type = (
+        df.groupby([df["date"].dt.date, "saleType"])["priceUsd"]
+          .count()
+          .unstack(fill_value=0)
+          .sort_index()
+    )
+
+    # Kümülatif satış tutarı (USD)
+    cumsum_sales = (
+        df.groupby(df["date"].dt.date)["priceUsd"]
+          .sum()
+          .sort_index()
+          .cumsum()
+    )
+
+    # Grafik
+    fig = go.Figure()
+
+    # Stacked bar (satış adetleri)
+    for col in daily_count_by_type.columns:
+        fig.add_trace(go.Bar(
+            x=daily_count_by_type.index,
+            y=daily_count_by_type[col],
+            name=col
+        ))
+
+    # Pareto çizgisi (kümülatif USD)
+    fig.add_trace(go.Scatter(
+        x=cumsum_sales.index,
+        y=cumsum_sales.values,
+        mode="lines+markers+text",
+        text=[f"{v/1000:.1f}K" if v >= 1000 else str(int(v)) for v in cumsum_sales],
+        textposition="top center",
+        name="Cumulative Sales (USD)",
+        line=dict(color="red", width=2)
+    ))
+
+    # Layout ayarları
+    fig.update_layout(
+        barmode="stack",
+        title="Daily Sales Count by Type with Cumulative Sales",
+        xaxis_title="Date",
+        yaxis_title="Number of Sales",
+        yaxis=dict(tickmode="linear", dtick=1),  # tam sayılar
+        legend=dict(title="Sale Type", x=1.02, y=1, bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=40, r=40, t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white"
+    )
+    
+    return fig
+
+
 
 
 # Tablo
