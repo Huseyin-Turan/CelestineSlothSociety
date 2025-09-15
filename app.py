@@ -151,63 +151,53 @@ def create_scatter(_, start_date, end_date):
 )
 def create_pareto(_, start_date, end_date):
     df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
-    #sale_types = df['saleType'].unique()
-    #color_map = {s: custom_colors[i % len(custom_colors)] for i, s in enumerate(sale_types)}
+    if df.empty:
+        return go.Figure()  # boş veri varsa boş fig dön
+
+    sale_types = df['saleType'].unique()
+    color_map = {s: custom_colors[i % len(custom_colors)] for i, s in enumerate(sale_types)}
 
     # Günlük satış adedi türlerine göre
-    daily_count_by_type = (
-        df.groupby([df["date"].dt.date, "saleType"])["priceUsd"]
-          .count()
-          .unstack(fill_value=0)
-          .sort_index()
-    )
+    daily_count_by_type = df.groupby([df["date"].dt.date, "saleType"])["priceUsd"]\
+                            .count().unstack(fill_value=0).sort_index()
 
     # Kümülatif satış tutarı (USD)
-    cumsum_sales = (
-        df.groupby(df["date"].dt.date)["priceUsd"]
-          .sum()
-          .sort_index()
-          .cumsum()
-    )
-    # cumsum_sales'i daily_count_by_type.index'e göre hizala (eksik tarih varsa forward-fill)
-    cumsum_sales = cumsum_sales.reindex(daily_count_by_type.index, method='ffill').fillna(0)
+    daily_total = df.groupby(df["date"].dt.date)["priceUsd"].sum().sort_index()
+    cumsum_sales = daily_total.cumsum()
 
-    # Kategori etiketleri (eşit aralık için string)
-    x_labels = [d.strftime('%Y-%m-%d') if hasattr(d, "strftime") else str(d) for d in daily_count_by_type.index]
+    # Kategori etiketleri
+    x_labels = [d.strftime('%Y-%m-%d') for d in daily_count_by_type.index]
 
     fig = go.Figure()
 
-    # Stacked bar (satış adetleri) — aynı renkler color_map ile
+    # Barlar
     for col in daily_count_by_type.columns:
         fig.add_trace(go.Bar(
             x=x_labels,
             y=daily_count_by_type[col].values,
             name=col,
-            marker_color=color_map.get(col, "#888888")  # fallback gri
+            marker_color=color_map.get(col, "#888888")
         ))
 
-    # Pareto çizgisi (kümülatif USD) — sağ y ekseni (y2) kullan
-    cs_vals = cumsum_sales.values
+    # Cumulative line
     fig.add_trace(go.Scatter(
         x=x_labels,
-        y=cs_vals,
+        y=cumsum_sales.values,
         mode="lines+markers+text",
-        text=[f"{v/1000:.1f}K" if v >= 1000 else f"{int(v)}" for v in cs_vals],
+        text=[f"{v/1000:.1f}K" if v >= 1000 else f"{int(v)}" for v in cumsum_sales.values],
         textposition="top center",
-        showlegend=False,  
-        name="Cumulative Sales (USD)",
+        showlegend=False,
         yaxis="y2",
         line=dict(color="red", width=2),
         marker=dict(size=6)
     ))
 
-    # Layout: y2 sağda, x ekseni kategorik — böylece barlar eşit aralıklı olur
     fig.update_layout(
         barmode="stack",
         title="Daily Sales Count by Type with Cumulative Sales",
         xaxis=dict(title="Date", type="category", tickangle=45),
         yaxis=dict(title="Number of Sales", tickmode="linear", dtick=1),
-        yaxis2=dict(title="Cumulative Sales (USD)", overlaying="y", side="right", showgrid=True),
+        yaxis2=dict(title="Cumulative Sales (USD)", overlaying="y", side="right"),
         legend=dict(title="Sale Type", x=1.02, y=1),
         margin=dict(l=50, r=80, t=60, b=120),
         plot_bgcolor="white",
@@ -215,6 +205,7 @@ def create_pareto(_, start_date, end_date):
         bargap=0.15,
         bargroupgap=0.05
     )
+
     return fig
 
 # Tablo
@@ -266,4 +257,3 @@ def filter_data_by_date(df, start_date, end_date):
 
 if __name__ == '__main__':
     app.run(debug=False, host="0.0.0.0", port=8080)
-
