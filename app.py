@@ -148,9 +148,10 @@ def create_scatter(_, start_date, end_date):
     Input("interval-component", "n_intervals"),
     Input('date-picker', 'start_date'),
     Input('date-picker', 'end_date')
-    
-    
+)
 def create_pareto(_, start_date, end_date):
+    df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
+
     # Günlük satış adedi türlerine göre
     daily_count_by_type = (
         df.groupby([df["date"].dt.date, "saleType"])["priceUsd"]
@@ -201,8 +202,8 @@ def create_pareto(_, start_date, end_date):
         plot_bgcolor="white",
         paper_bgcolor="white"
     )
-    
     return fig
+
 
 
 
