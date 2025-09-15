@@ -45,11 +45,11 @@ app.layout = html.Div([
         dcc.Graph(id='kpi-offer-txn', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"}),
         dcc.Graph(id='kpi-total-volume', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"})
     ], style={"textAlign": "center", "marginBottom": "10px"}),
-    
+
+
     html.Div([
-        dcc.Graph(id="Pareto-plot", style={"width": "70%", "height": "600px"}),
-        html.Div(id="image-box", style={"width": "30%", "padding": "20px", "borderLeft": "1px solid lightgray"})
-    ], style={"display": "flex", "marginBottom": "10px"}),
+    dcc.Graph(id="Pareto-plot", style={"width": "100%", "height": "700px"})
+    ], style={"marginBottom": "10px"}),
     
 
     html.Div([
@@ -151,6 +151,8 @@ def create_scatter(_, start_date, end_date):
 )
 def create_pareto(_, start_date, end_date):
     df = filter_data_by_date(DATA_CACHE.copy(), start_date, end_date)
+    #sale_types = df['saleType'].unique()
+    #color_map = {s: custom_colors[i % len(custom_colors)] for i, s in enumerate(sale_types)}
 
     # Günlük satış adedi türlerine göre
     daily_count_by_type = (
@@ -167,46 +169,53 @@ def create_pareto(_, start_date, end_date):
           .sort_index()
           .cumsum()
     )
+    # cumsum_sales'i daily_count_by_type.index'e göre hizala (eksik tarih varsa forward-fill)
+    cumsum_sales = cumsum_sales.reindex(daily_count_by_type.index, method='ffill').fillna(0)
 
-    # Grafik
+    # Kategori etiketleri (eşit aralık için string)
+    x_labels = [d.strftime('%Y-%m-%d') if hasattr(d, "strftime") else str(d) for d in daily_count_by_type.index]
+
     fig = go.Figure()
 
-    # Stacked bar (satış adetleri)
+    # Stacked bar (satış adetleri) — aynı renkler color_map ile
     for col in daily_count_by_type.columns:
         fig.add_trace(go.Bar(
-            x=daily_count_by_type.index,
-            y=daily_count_by_type[col],
-            name=col
+            x=x_labels,
+            y=daily_count_by_type[col].values,
+            name=col,
+            marker_color=color_map.get(col, "#888888")  # fallback gri
         ))
 
-    # Pareto çizgisi (kümülatif USD)
+    # Pareto çizgisi (kümülatif USD) — sağ y ekseni (y2) kullan
+    cs_vals = cumsum_sales.values
     fig.add_trace(go.Scatter(
-        x=cumsum_sales.index,
-        y=cumsum_sales.values,
+        x=x_labels,
+        y=cs_vals,
         mode="lines+markers+text",
-        text=[f"{v/1000:.1f}K" if v >= 1000 else str(int(v)) for v in cumsum_sales],
+        text=[f"{v/1000:.1f}K" if v >= 1000 else f"{int(v)}" for v in cs_vals],
         textposition="top center",
+        showlegend=False,  
         name="Cumulative Sales (USD)",
-        line=dict(color="red", width=2)
+        yaxis="y2",
+        line=dict(color="red", width=2),
+        marker=dict(size=6)
     ))
 
-    # Layout ayarları
+    # Layout: y2 sağda, x ekseni kategorik — böylece barlar eşit aralıklı olur
     fig.update_layout(
         barmode="stack",
         title="Daily Sales Count by Type with Cumulative Sales",
-        xaxis_title="Date",
-        yaxis_title="Number of Sales",
-        yaxis=dict(tickmode="linear", dtick=1),  # tam sayılar
-        legend=dict(title="Sale Type", x=1.02, y=1, bgcolor="rgba(0,0,0,0)"),
-        margin=dict(l=40, r=40, t=60, b=40),
+        xaxis=dict(title="Date", type="category", tickangle=45),
+        yaxis=dict(title="Number of Sales", tickmode="linear", dtick=1),
+        yaxis2=dict(title="Cumulative Sales (USD)", overlaying="y", side="right", showgrid=True),
+        legend=dict(title="Sale Type", x=1.02, y=1),
+        margin=dict(l=50, r=80, t=60, b=120),
         plot_bgcolor="white",
-        paper_bgcolor="white"
+        paper_bgcolor="white",
+        bargap=0.15,
+        bargroupgap=0.05
     )
     return fig
-
-
-
-
 
 # Tablo
 @app.callback(
@@ -254,5 +263,6 @@ def filter_data_by_date(df, start_date, end_date):
         df = df[(df['date_only'] >= start) & (df['date_only'] <= end)]
     return df
 
-if __name__ == '__main__':
-    app.run(debug=False, host="0.0.0.0", port=8080)
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8050)
