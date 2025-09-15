@@ -264,5 +264,6 @@ def filter_data_by_date(df, start_date, end_date):
     return df
 
 
-if __name__ == "__main__":
-    app.run(debug=True, port=8050)
+if __name__ == '__main__':
+    app.run(debug=False, host="0.0.0.0", port=8080)
+
