@@ -45,11 +45,6 @@ app.layout = html.Div([
         dcc.Graph(id='kpi-offer-txn', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"}),
         dcc.Graph(id='kpi-total-volume', style={"width": "32%", "display": "inline-block", "margin": "0 0.5%"})
     ], style={"textAlign": "center", "marginBottom": "10px"}),
-
-
-    html.Div([
-    dcc.Graph(id="Pareto-plot", style={"width": "100%", "height": "700px"})
-    ], style={"marginBottom": "10px"}),
     
 
     html.Div([
@@ -75,6 +70,14 @@ app.layout = html.Div([
             markdown_options={"html": True},
         )
     ]),
+
+    html.Div([
+    dcc.Graph(id="Pareto-plot", style={"width": "100%", "height": "700px"})
+    ], style={"marginBottom": "10px"}),
+
+    html.Div([
+    dcc.Graph(id="Pareto-plot-M", style={"width": "100%", "height": "700px"})
+    ], style={"marginBottom": "10px"}),
 
     dcc.Interval(id='interval-component', interval=3600 * 1000, n_intervals=0)
 ], style={"fontFamily": "Arial, sans-serif", "padding": "10px"})
@@ -168,6 +171,16 @@ def create_pareto(_, start_date, end_date):
     # Kategori etiketleri
     x_labels = [d.strftime('%Y-%m-%d') for d in daily_count_by_type.index]
 
+     # Cumulative için label format
+    def format_label(v):
+        if v >= 1_000_000:
+            return f"{v/1_000_000:.1f}M"
+        elif v >= 1000:
+            return f"{v/1000:.1f}K"
+        else:
+            return f"{int(v)}"
+
+
     fig = go.Figure()
 
     # Barlar
@@ -184,7 +197,7 @@ def create_pareto(_, start_date, end_date):
         x=x_labels,
         y=cumsum_sales.values,
         mode="lines+markers+text",
-        text=[f"{v/1000:.1f}K" if v >= 1000 else f"{int(v)}" for v in cumsum_sales.values],
+        text=[format_label(v) for v in cumsum_sales.values],#[f"{v/1000:.1f}K" if v >= 1000 else f"{int(v)}" for v in cumsum_sales.values],
         textposition="top center",
         showlegend=False,
         yaxis="y2",
@@ -198,7 +211,7 @@ def create_pareto(_, start_date, end_date):
         xaxis=dict(title="Date", type="category", tickangle=45),
         yaxis=dict(title="Number of Sales", tickmode="linear", dtick=1),
         yaxis2=dict(title="Cumulative Sales (USD)", overlaying="y", side="right"),
-        legend=dict(title="Sale Type", x=1.02, y=1),
+        legend=dict(title="Sale Type", x=1.08, y=1),
         margin=dict(l=50, r=80, t=60, b=120),
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -207,6 +220,96 @@ def create_pareto(_, start_date, end_date):
     )
 
     return fig
+
+@app.callback(
+    Output("Pareto-plot-M", "figure"),
+    Input("interval-component", "n_intervals")
+)
+def create_pareto_monthly(_):
+    df = DATA_CACHE.copy()
+    if df.empty:
+        return go.Figure()
+
+    sale_types = df['saleType'].unique()
+    color_map = {s: custom_colors[i % len(custom_colors)] for i, s in enumerate(sale_types)}
+
+    # Ay bazında index oluştur
+    df['date'] = df['date'].dt.tz_convert(None)  # timezone bilgisini kaldır
+    df['year_month'] = df['date'].dt.to_period('M').dt.to_timestamp()
+
+    # Aylık satış adedi türlerine göre
+    monthly_count_by_type = (
+        df.groupby(['year_month', 'saleType'])['priceUsd']
+        .count().unstack(fill_value=0).sort_index()
+    )
+
+    # Kümülatif satış (USD)
+    monthly_total_usd = df.groupby('year_month')['priceUsd'].sum().sort_index()
+    cumsum_sales = monthly_total_usd.cumsum()
+
+    # X ekseni etiketleri
+    x_labels = monthly_count_by_type.index.tolist()
+
+    # Y ekseni maksimumu -> en yakın 100’e yuvarla
+    max_count = monthly_count_by_type.sum(axis=1).max()
+    y_max = (int(max_count / 100) + 1) * 100
+
+    # Cumulative için label format
+    def format_label(v):
+        if v >= 1_000_000:
+            return f"{v/1_000_000:.1f}M"
+        elif v >= 1000:
+            return f"{v/1000:.1f}K"
+        else:
+            return f"{int(v)}"
+
+    fig = go.Figure()
+
+    # Barlar
+    for col in monthly_count_by_type.columns:
+        fig.add_trace(go.Bar(
+            x=x_labels,
+            y=monthly_count_by_type[col].values,
+            name=col,
+            marker_color=color_map.get(col, "#888888")
+        ))
+
+    # Cumulative line
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=cumsum_sales.values,
+        mode="lines+markers+text",
+        text=[format_label(v) for v in cumsum_sales.values],
+        textposition="top center",
+        showlegend=False,
+        yaxis="y2",
+        line=dict(color="red", width=2),
+        marker=dict(size=6)
+    ))
+
+    fig.update_layout(
+        barmode="stack",
+        title="Monthly Sales Count by Type with Cumulative Sales",
+        xaxis=dict(title="Year-Month", type="category", tickangle=45),
+        yaxis=dict(
+            title="Number of Sales",
+            tickmode="linear",
+            dtick=100,        # 100’lük baremler
+            range=[0, y_max]  # otomatik max
+        ),
+        yaxis2=dict(title="Cumulative Sales (USD)", overlaying="y", side="right"),
+        legend=dict(title="Sale Type", x=1.08, y=1, xanchor="left", yanchor="top"),
+        margin=dict(l=50, r=80, t=60, b=120),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        bargap=0.15,
+        bargroupgap=0.05
+    )
+
+    return fig
+
+
+
 
 # Tablo
 @app.callback(
@@ -257,3 +360,4 @@ def filter_data_by_date(df, start_date, end_date):
 
 if __name__ == '__main__':
     app.run(debug=False, host="0.0.0.0", port=8080)
+
